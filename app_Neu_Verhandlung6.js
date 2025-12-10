@@ -57,12 +57,11 @@ const EXTREME_BASE = 1500;
 // absolute Schmerzgrenze (Basis), wird pro Dimension skaliert
 const ABSOLUTE_FLOOR = 3500;
 
-// Basiswerte (INITIAL_OFFER / MIN_PRICE bleiben konfigurierbar, werden hier
-// aber für den Verhandlungsstil kaum genutzt)
+// Basiswerte (werden hier aber für den Stil kaum genutzt)
 const BASE_INITIAL_OFFER = CONFIG.INITIAL_OFFER;
 const BASE_MIN_PRICE     = CONFIG.MIN_PRICE;
 
-// Schrittweite spielt in diesem Treatment praktisch keine Rolle (Angebot bleibt konstant)
+// Schrittweite spielt in diesem Treatment keine Rolle (Angebot bleibt konstant)
 const BASE_STEP_AMOUNT   = 0;
 
 /*
@@ -119,11 +118,11 @@ function newState(){
 
   // 2) Schmerzgrenze für diese Dimension berechnen (intern)
   const floorRaw      = ABSOLUTE_FLOOR * factor;
-  const floorRounded  = roundToNearest50(floorRaw);
+  const floorRounded  = roundToNearest50(floorRaw); // ist automatisch ein ganzzahliger Euro-Betrag
 
-  // 3) Erstangebot: Basis 3.728 €, skaliert mit Faktor
+  // 3) Erstangebot: Basis 3.728 €, skaliert mit Faktor und auf vollen Euro gerundet
   const initialRaw    = 3728 * factor;
-  const initialOffer  = initialRaw; // hier KEINE Rundung, damit 3.728 exakt bleibt
+  const initialOffer  = Math.round(initialRaw);      // → kein Centbetrag möglich
 
   // Schrittweite ist in diesem Treatment 0 (keine Bewegung)
   const stepAmount = 0;
@@ -138,7 +137,7 @@ function newState(){
     scale_factor: factor,
     step_amount: stepAmount,
 
-    // Schmerzgrenze bleibt intern bei 3.500 € × Faktor
+    // Schmerzgrenze intern bei 3.500 € × Faktor
     min_price: floorRounded,
     max_price: initialOffer,
     initial_offer: initialOffer,
@@ -381,10 +380,10 @@ function computeNextOffer(prevOffer, minPrice, probandCounter, runde, lastConces
   const prev  = Number(prevOffer);
   const floor = Number(minPrice);
 
-  // Verkäufer startet bei einem festen Erstangebot (z.B. 3.728 × Faktor)
+  // Verkäufer startet bei einem festen Erstangebot (z.B. 3.728 × Faktor, gerundet)
   // und bewegt sich in den folgenden Runden nicht.
   const offer = Math.max(floor, prev); // Sicherheitsnetz, falls prev < floor
-  return offer;
+  return Math.round(offer);            // sicherheitshalber runden (ganzzahlig)
 }
 
 /* ========================================================================== */
@@ -511,7 +510,7 @@ function viewNegotiate(errorMsg){
 
       <label for="counter">Dein Gegenangebot (€)</label>
       <div class="row">
-        <input id="counter" type="number" step="0.01" min="0" />
+        <input id="counter" type="number" step="1" min="0" />
         <button id="sendBtn">Gegenangebot senden</button>
       </div>
 
@@ -558,10 +557,13 @@ function viewNegotiate(errorMsg){
 
 function handleSubmit(raw){
   const val = raw.trim().replace(',','.');
-  const num = Number(val);
-  if (!Number.isFinite(num) || num < 0){
+  const numRaw = Number(val);
+  if (!Number.isFinite(numRaw) || numRaw < 0){
     return viewNegotiate('Bitte eine gültige Zahl ≥ 0 eingeben.');
   }
+
+  // Auf vollen Euro runden, damit keine Cent-Beträge entstehen
+  const num = Math.round(numRaw);
 
   const prevOffer = state.current_offer;
   const f = state.scale_factor || 1.0;
