@@ -7,7 +7,8 @@ const CONFIG = {
   // Startangebot jetzt 3782, falls nicht per URL überschrieben
   INITIAL_OFFER: Number(Q.get("i")) || 3782,
 
-  // optional direkt setzen (?min=3500). Wenn nicht gesetzt, wird per Faktor berechnet.
+  // optional direkt setzen (?min=...). Für diesen Stil setzen wir min intern = INITIAL_OFFER,
+  // der URL-Wert kann aber trotzdem eingelesen werden falls du ihn später brauchst.
   MIN_PRICE: Q.has("min") ? Number(Q.get("min")) : undefined,
   MIN_PRICE_FACTOR: Number(Q.get("mf")) || 0.7,
 
@@ -19,7 +20,7 @@ const CONFIG = {
   THINK_DELAY_MS_MAX: parseInt(Q.get("tmax") || "2800", 10),
 };
 
-// Mindestpreis finalisieren (Fallback über Faktor)
+// Mindestpreis finalisieren (Fallback über Faktor – wird gleich aber auf Startangebot gesetzt)
 CONFIG.MIN_PRICE = Number.isFinite(CONFIG.MIN_PRICE)
   ? CONFIG.MIN_PRICE
   : Math.round(CONFIG.INITIAL_OFFER * CONFIG.MIN_PRICE_FACTOR);
@@ -69,8 +70,11 @@ function nextDimension() {
 function newState() {
   const f = nextDimension();
 
+  // Referenzwert 3782 wird mit f multipliziert und auf den Euro gerundet
   const baseStart = roundEuro(CONFIG.INITIAL_OFFER * f);
-  const baseMin = roundEuro(CONFIG.MIN_PRICE * f);
+
+  // In diesem Treatment: Schmerzgrenze = Startangebot (kein Nachgeben)
+  const baseMin = baseStart;
 
   return {
     participant_id: crypto.randomUUID?.() || "v_" + Date.now(),
@@ -128,45 +132,13 @@ function shouldAutoAccept(_initialOffer, _minPrice, _prevOffer, counter) {
 }
 
 /* ============================================================
-   VERKÄUFER-UPDATE
-   Runde 1:  -500 * f
-   Runde 2:  -250 * f
-   Ab Runde 3 bis vor der letzten Runde: prozentualer Schritt
-   Letzte Angebotsrunde (runde >= max_runden): direkt Schmerzgrenze
+   VERKÄUFER-UPDATE – KONSTANTES ANGEBOT
+   -> Algorithmus bleibt in jeder Runde beim selben Preis
 ============================================================ */
 
-function computeNextOffer(userOffer) {
-  if (shouldAccept(userOffer)) return roundEuro(userOffer);
-
-  const f = state.scale;
-  const r = state.runde;
-  const min = state.min_price;
-  const curr = state.current_offer;
-
-  let next;
-
-  if (r === 1) {
-    // 1. Runde: fester Schritt 500 * f
-    next = curr - roundEuro(500 * f);
-  } else if (r === 2) {
-    // 2. Runde: fester Schritt 250 * f
-    next = curr - roundEuro(250 * f);
-  } else if (r >= state.max_runden) {
-    // Letzte Angebotsrunde: direkt an die Schmerzgrenze
-    next = min;
-  } else {
-    // Ab Runde 3 bis kurz vor der letzten Runde:
-    // systematisch in Richtung Schmerzgrenze, abhängig von verbleibenden Runden
-    const remainingSteps = state.max_runden - r + 1; // inkl. dieser Runde
-    const gap = curr - min;
-
-    const stepDown = gap / remainingSteps;
-    next = curr - stepDown;
-  }
-
-  if (next < min) next = min;
-
-  return roundEuro(next);
+function computeNextOffer(_userOffer) {
+  // Kein Nachgeben: Angebot bleibt immer gleich
+  return state.current_offer;
 }
 
 /* ============================================================
@@ -604,7 +576,7 @@ function handleSubmit(raw) {
   // Abbruch prüfen (nutzt warningRounds, setzt last_abort_chance)
   if (maybeAbort(num)) return;
 
-  // normale Runde
+  // normale Runde – Verkäufer bleibt beim gleichen Angebot
   const next = computeNextOffer(num);
 
   logRound({
@@ -623,7 +595,7 @@ function handleSubmit(raw) {
     accepted: false,
   });
 
-  state.current_offer = next;
+  state.current_offer = next; // bleibt konstant
 
   if (state.runde >= state.max_runden) {
     state.finished = true;
