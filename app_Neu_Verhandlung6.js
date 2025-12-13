@@ -4,7 +4,7 @@
 const Q = new URLSearchParams(location.search);
 
 const CONFIG = {
-  INITIAL_OFFER: Number(Q.get('i')) || 5500,
+  INITIAL_OFFER: Number(Q.get('i')) || 5518,
 
   // optional direkt setzen (?min=3500). Wenn nicht gesetzt, wird per Faktor berechnet.
   MIN_PRICE: Q.has('min') ? Number(Q.get('min')) : undefined,
