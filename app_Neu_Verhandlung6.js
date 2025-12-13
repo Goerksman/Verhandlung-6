@@ -4,8 +4,8 @@
 const Q = new URLSearchParams(location.search);
 
 const CONFIG = {
-  // Startangebot jetzt 5518, falls nicht per URL überschrieben
-  INITIAL_OFFER: Number(Q.get("i")) || 5518,
+  // Startangebot jetzt 3782, falls nicht per URL überschrieben
+  INITIAL_OFFER: Number(Q.get("i")) || 3782,
 
   // optional direkt setzen (?min=3500). Wenn nicht gesetzt, wird per Faktor berechnet.
   MIN_PRICE: Q.has("min") ? Number(Q.get("min")) : undefined,
@@ -171,14 +171,6 @@ function computeNextOffer(userOffer) {
 
 /* ============================================================
    PATTERNERKENNUNG (kleine Schritte) + Warntext
-   - betrachtet nur Runden 1–4 und Angebote >= 2250 * f
-   - kleine Schritte: Erhöhung >0 und < 100 * f gegenüber der Vorrunde
-   - sobald kleine Schritte erkannt werden:
-       * warningRounds++
-       * patternMessage zeigt Warnung
-   - bei normalem Schritt oder außerhalb Runden 1–4:
-       * warningRounds = 0
-       * kein Warntext
 ============================================================ */
 
 function updatePatternState(currentBuyerOffer) {
@@ -227,11 +219,6 @@ function updatePatternState(currentBuyerOffer) {
 
 /* ============================================================
    RISIKO-SYSTEM
-   - Differenzmodell mit 3000-Referenz: 3000 Differenz → 30 %
-   - Runde 1: kein Abbruch außer bei Angeboten < 1500 * f
-   - Kleine Schritte (warningRounds > 0, nur Runden 1–4):
-       * Runde, in der das Verhalten erkannt wird: +7 % Risiko
-       * plus +3 % pro weiterer Warnrunde
 ============================================================ */
 
 function abortProbabilityFromLastDifference(sellerOffer, buyerOffer) {
@@ -287,7 +274,6 @@ function maybeAbort(userOffer) {
   if (state.runde === 1) {
     const baseChance = abortProbabilityFromLastDifference(seller, buyer);
     state.last_abort_chance = baseChance;
-    // warningRounds hat in Runde 1 keinen Einfluss auf Abbruch (nur Anzeige)
     return false;
   }
 
