@@ -136,10 +136,11 @@ function shouldAutoAccept(_initialOffer, _minPrice, _prevOffer, counter) {
    -> Algorithmus bleibt in jeder Runde beim selben Preis
 ============================================================ */
 
-function computeNextOffer(_userOffer) {
-  // Kein Nachgeben: Angebot bleibt immer gleich
-  return state.current_offer;
+function computeNextOffer() {
+  // Angebot bleibt strikt beim anfänglichen Algorithmuspreis
+  return state.initial_offer;
 }
+
 
 /* ============================================================
    PATTERNERKENNUNG (kleine Schritte) + Warntext
@@ -576,8 +577,8 @@ function handleSubmit(raw) {
   // Abbruch prüfen (nutzt warningRounds, setzt last_abort_chance)
   if (maybeAbort(num)) return;
 
-  // normale Runde – Verkäufer bleibt beim gleichen Angebot
-  const next = computeNextOffer(num);
+    // normale Runde – Verkäufer bleibt beim gleichen Angebot
+  const next = computeNextOffer(); // kein Einfluss des Nutzerangebots
 
   logRound({
     runde: state.runde,
@@ -595,7 +596,9 @@ function handleSubmit(raw) {
     accepted: false,
   });
 
-  state.current_offer = next; // bleibt konstant
+  // Angebot bleibt auf dem ursprünglichen Startpreis
+  state.current_offer = next;
+
 
   if (state.runde >= state.max_runden) {
     state.finished = true;
