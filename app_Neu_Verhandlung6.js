@@ -219,7 +219,7 @@ function updatePatternState(currentBuyerOffer) {
 
   if (state.warningRounds > 0) {
     state.patternMessage =
-      "Deine bisherigen Erhöhungen sind ziemlich frech – mach bitte einen größeren Schritt nach oben.";
+      "Mit derart kleinen Erhöhungen kommen wir eher unwahrscheinlich zu einer Einigung.";
   } else {
     state.patternMessage = "";
   }
