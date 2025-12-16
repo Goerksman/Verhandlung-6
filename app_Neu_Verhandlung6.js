@@ -176,8 +176,8 @@ function updatePatternState(currentBuyerOffer) {
 
 /* ============================================================
    RISIKO-SYSTEM
-   - Differenzmodell mit 3000 * Multiplikator → 30 %
-   - Wert wird in allen Runden berechnet, aber Abbruch erst ab Runde 4
+   - Differenzmodell mit 3000 * Multiplikator → 25 %
+   - Wert wird in allen Runden berechnet, aber Abbruch erst ab Runde 3
    - Warnung: +2 %-Punkte pro Warnrunde (kumulativ)
 ============================================================ */
 
@@ -186,10 +186,10 @@ function abortProbabilityFromLastDifference(sellerOffer, buyerOffer) {
 
   const diff = Math.abs(roundEuro(sellerOffer) - roundEuro(buyerOffer));
 
-  // Referenz: 3000 * Multiplikator → 30 %
+  // Referenz: 3000 * Multiplikator → 25 %
   const BASE_DIFF = 3000 * f;
 
-  let chance = (diff / BASE_DIFF) * 30;
+  let chance = (diff / BASE_DIFF) * 25;
 
   if (chance < 0) chance = 0;
   if (chance > 100) chance = 100;
@@ -206,7 +206,7 @@ function maybeAbort(userOffer) {
   let chance = abortProbabilityFromLastDifference(seller, buyer);
 
   // Extrem-Lowball: Käuferangebot < 1500 * Multiplikator → Basisrisiko auf 100 % hochsetzen,
-  // aber trotzdem erst ab Runde 4 effektiv abbrechen
+  // aber trotzdem erst ab Runde 3 effektiv abbrechen
   if (buyer < roundEuro(1500 * f)) {
     chance = 100;
   }
@@ -218,8 +218,8 @@ function maybeAbort(userOffer) {
 
   state.last_abort_chance = chance;
 
-  // KEIN Abbruch vor Runde 4 (nur Anzeige)
-  if (state.runde < 4) {
+  // KEIN Abbruch vor Runde 3 (nur Anzeige)
+  if (state.runde < 3) {
     return false;
   }
 
@@ -774,3 +774,4 @@ function viewFinish(accepted) {
 ============================================================ */
 
 viewVignette();
+
