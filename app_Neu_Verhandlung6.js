@@ -7,8 +7,7 @@ const CONFIG = {
   // Startangebot jetzt 3782, falls nicht per URL überschrieben
   INITIAL_OFFER: Number(Q.get("i")) || 3782,
 
-  // optional direkt setzen (?min=...). Für diesen Stil setzen wir min intern = INITIAL_OFFER,
-  // der URL-Wert kann aber trotzdem eingelesen werden falls du ihn später brauchst.
+  // optional direkt setzen (?min=...). Für dieses Treatment nutzen wir intern das Startangebot als min_price
   MIN_PRICE: Q.has("min") ? Number(Q.get("min")) : undefined,
   MIN_PRICE_FACTOR: Number(Q.get("mf")) || 0.7,
 
@@ -20,7 +19,7 @@ const CONFIG = {
   THINK_DELAY_MS_MAX: parseInt(Q.get("tmax") || "2800", 10),
 };
 
-// Mindestpreis finalisieren (Fallback über Faktor – wird gleich aber auf Startangebot gesetzt)
+// Mindestpreis (für evtl. spätere Nutzung); in diesem Treatment = Startangebot
 CONFIG.MIN_PRICE = Number.isFinite(CONFIG.MIN_PRICE)
   ? CONFIG.MIN_PRICE
   : Math.round(CONFIG.INITIAL_OFFER * CONFIG.MIN_PRICE_FACTOR);
@@ -44,23 +43,12 @@ const eur = (n) =>
 const app = document.getElementById("app");
 
 /* ============================================================
-   DIMENSIONSSYSTEM
+   DIMENSIONSSYSTEM – reeller Multiplikator 1–5 (random)
 ============================================================ */
 
-const DIM_FACTORS = [1.0, 1.3, 1.5];
-let DIM_QUEUE = [];
-
-function shuffleDimensions() {
-  DIM_QUEUE = [...DIM_FACTORS];
-  for (let i = DIM_QUEUE.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [DIM_QUEUE[i], DIM_QUEUE[j]] = [DIM_QUEUE[j], DIM_QUEUE[i]];
-  }
-}
-
 function nextDimension() {
-  if (DIM_QUEUE.length === 0) shuffleDimensions();
-  return DIM_QUEUE.pop();
+  // Zufallszahl im Intervall [1, 5)
+  return 1 + Math.random() * 4;
 }
 
 /* ============================================================
@@ -141,9 +129,12 @@ function computeNextOffer() {
   return state.initial_offer;
 }
 
-
 /* ============================================================
-   PATTERNERKENNUNG (kleine Schritte) + Warntext
+   PATTERNERKENNUNG (keine / kleine Schritte) + Warntext
+   - relevant ab Angeboten ≥ 2250 * Multiplikator
+   - "kleiner Schritt": diff >= 0 und diff ≤ 100 * Multiplikator
+   - ab 2 solchen Schritten in Folge: Warnung aktiv
+   - warningRounds zählt Runden mit aktiver Warnung, solange Muster anhält
 ============================================================ */
 
 function updatePatternState(currentBuyerOffer) {
@@ -151,13 +142,6 @@ function updatePatternState(currentBuyerOffer) {
   const minRelevant = roundEuro(2250 * f);
   const SMALL = roundEuro(100 * f);
   const buyer = roundEuro(currentBuyerOffer);
-
-  // außerhalb 1–4: keinerlei Pattern-Aufbau
-  if (state.runde > 4) {
-    state.warningRounds = 0;
-    state.patternMessage = "";
-    return;
-  }
 
   const last = state.history[state.history.length - 1];
 
@@ -167,11 +151,11 @@ function updatePatternState(currentBuyerOffer) {
     // nur wenn beide Angebote im relevanten Bereich liegen
     if (buyer >= minRelevant && lastBuyer >= minRelevant) {
       const stepUp = buyer - lastBuyer;
-      if (stepUp > 0 && stepUp < SMALL) {
-        // kleine Erhöhung → Warnkette verlängern
+      // kleine Erhöhung oder keine Veränderung
+      if (stepUp >= 0 && stepUp <= SMALL) {
         state.warningRounds = (state.warningRounds || 0) + 1;
       } else {
-        // kein kleines Schrittmuster → Kette bricht ab
+        // Muster durchbrochen → zurücksetzen
         state.warningRounds = 0;
       }
     } else {
@@ -192,6 +176,9 @@ function updatePatternState(currentBuyerOffer) {
 
 /* ============================================================
    RISIKO-SYSTEM
+   - Differenzmodell mit 3000 * Multiplikator → 30 %
+   - Wert wird in allen Runden berechnet, aber Abbruch erst ab Runde 4
+   - Warnung: +2 %-Punkte pro Warnrunde (kumulativ)
 ============================================================ */
 
 function abortProbabilityFromLastDifference(sellerOffer, buyerOffer) {
@@ -199,7 +186,7 @@ function abortProbabilityFromLastDifference(sellerOffer, buyerOffer) {
 
   const diff = Math.abs(roundEuro(sellerOffer) - roundEuro(buyerOffer));
 
-  // Referenz: 3000 € → 30 % (skaliert mit f)
+  // Referenz: 3000 * Multiplikator → 30 %
   const BASE_DIFF = 3000 * f;
 
   let chance = (diff / BASE_DIFF) * 30;
@@ -215,52 +202,26 @@ function maybeAbort(userOffer) {
   const seller = state.current_offer;
   const buyer = roundEuro(userOffer);
 
-  // 1) Extrem-Lowball: unter 1500 * f → immer Abbruch, auch in Runde 1
-  if (buyer < roundEuro(1500 * f)) {
-    state.last_abort_chance = 100;
-
-    logRound({
-      runde: state.runde,
-      algo_offer: seller,
-      proband_counter: buyer,
-      accepted: false,
-      finished: true,
-      deal_price: "",
-    });
-
-    state.history.push({
-      runde: state.runde,
-      algo_offer: seller,
-      proband_counter: buyer,
-      accepted: false,
-    });
-
-    state.finished = true;
-    state.accepted = false;
-
-    viewAbort(100);
-    return true;
-  }
-
-  // 2) Runde 1: KEIN Abbruch (außer Extremfall oben),
-  //    aber Risiko zur Anzeige berechnen
-  if (state.runde === 1) {
-    const baseChance = abortProbabilityFromLastDifference(seller, buyer);
-    state.last_abort_chance = baseChance;
-    return false;
-  }
-
-  // 3) Ab Runde 2: Basis-Risiko über Differenz
+  // Basisrisiko aus Differenz
   let chance = abortProbabilityFromLastDifference(seller, buyer);
 
-  // 4) Zusatzrisiko aus "kleine Schritte"-Verhalten,
-  //    nur in den ersten 4 Runden relevant.
-  if (state.runde <= 4 && state.warningRounds > 0) {
-    const extra = 7 + (state.warningRounds - 1) * 3;
-    chance = Math.min(chance + extra, 100);
+  // Extrem-Lowball: Käuferangebot < 1500 * Multiplikator → Basisrisiko auf 100 % hochsetzen,
+  // aber trotzdem erst ab Runde 4 effektiv abbrechen
+  if (buyer < roundEuro(1500 * f)) {
+    chance = 100;
+  }
+
+  // Zusatzrisiko durch Warnung: +2 % * warningRounds
+  if (state.warningRounds > 0) {
+    chance = Math.min(100, chance + 2 * state.warningRounds);
   }
 
   state.last_abort_chance = chance;
+
+  // KEIN Abbruch vor Runde 4 (nur Anzeige)
+  if (state.runde < 4) {
+    return false;
+  }
 
   const roll = randInt(1, 100);
 
@@ -398,6 +359,8 @@ function viewAbort(chance) {
       <p class="muted">Abbruchwahrscheinlichkeit in dieser Runde: ${chance}%</p>
     </div>
 
+    <p><b>Du kannst nun entweder eine neue Runde spielen oder die Umfrage beantworten.</b></p>
+
     <button id="restartBtn">Neue Verhandlung</button>
     <button id="surveyBtn"
       style="
@@ -437,10 +400,14 @@ function viewNegotiate(errorMsg) {
       ? state.last_abort_chance
       : null;
 
-  let color = "#16a34a";
+  // Farbskala: <20% grün, 20–40% orange, >40% rot
+  let color = "#16a34a"; // grün
   if (abortChance !== null) {
-    if (abortChance > 50) color = "#ea580c";
-    else if (abortChance > 25) color = "#eab308";
+    if (abortChance > 40) {
+      color = "#dc2626"; // rot
+    } else if (abortChance >= 20) {
+      color = "#f97316"; // orange
+    }
   }
 
   app.innerHTML = `
@@ -466,11 +433,7 @@ function viewNegotiate(errorMsg) {
         </span>
       </div>
 
-      ${
-        state.patternMessage
-          ? `<p class="error">${state.patternMessage}</p>`
-          : ""
-      }
+      ${state.patternMessage ? `<p class="error">${state.patternMessage}</p>` : ""}
 
       <label for="counter">Dein Gegenangebot (€)</label>
       <div class="row">
@@ -577,7 +540,7 @@ function handleSubmit(raw) {
   // Abbruch prüfen (nutzt warningRounds, setzt last_abort_chance)
   if (maybeAbort(num)) return;
 
-    // normale Runde – Verkäufer bleibt beim gleichen Angebot
+  // normale Runde – Verkäufer bleibt beim gleichen Angebot
   const next = computeNextOffer(); // kein Einfluss des Nutzerangebots
 
   logRound({
@@ -598,7 +561,6 @@ function handleSubmit(raw) {
 
   // Angebot bleibt auf dem ursprünglichen Startpreis
   state.current_offer = next;
-
 
   if (state.runde >= state.max_runden) {
     state.finished = true;
@@ -671,6 +633,8 @@ function viewFinish(accepted) {
     <div class="card" style="padding:16px;border:1px dashed var(--accent);">
       <strong>Ergebnis:</strong> ${text}</strong>
     </div>
+
+    <p><b>Du kannst nun entweder eine neue Runde spielen oder die Umfrage beantworten.</b></p>
 
     <button id="restartBtn">Neue Verhandlung</button>
     <button id="surveyBtn"
